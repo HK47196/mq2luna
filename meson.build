@@ -1,6 +1,6 @@
 project('mq2luna', 'cpp',
   version : '0.1',
-  default_options : ['warning_level=3', 'cpp_std=c++2a', 'cpp_rtti=false'])
+  default_options : ['warning_level=3', 'cpp_std=c++2a', 'cpp_rtti=false', 'cpp_eh=none'])
 
 
 cc = meson.get_compiler('cpp')
