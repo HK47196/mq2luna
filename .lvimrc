@@ -1,0 +1,5 @@
+let b:ale_cpp_cc_executable = 'i686-w64-mingw32-g++'
+let inc_dir = g:localvimrc_script_dir . '/include/'
+let lua_inc_dir = g:localvimrc_script_dir . '/third_party/lua/include/'
+let b:ale_cpp_cc_options = '-std=c++2a -Wall -Wextra -I' . inc_dir . ' -I' . lua_inc_dir
+let b:ale_linters = {'cpp' : ['cc']}
