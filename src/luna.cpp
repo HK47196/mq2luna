@@ -24,16 +24,31 @@ int luna_yield(lua_State* ls) {
   }
   int nargs = lua_gettop(ls);
   if (nargs > 0) {
-    int sleep_ms = luaL_checkinteger(ls, 1);
-    if (!lua_isinteger(ls, 1)) {
-      return 0;
-    }
     auto ctx = zx::get_context(ls);
     if (ctx == nullptr) {
       return 0;
     }
-    auto now = std::chrono::steady_clock::now();
-    ctx->sleep_time = now + std::chrono::milliseconds(sleep_ms);
+    int type = lua_type(ls, 1);
+    if (type == LUA_TTABLE) {
+      lua_getfield(ls, 1, "min");
+      auto min = std::chrono::minutes(lua_tointeger(ls, -1));
+      lua_getfield(ls, 1, "sec");
+      auto sec = std::chrono::seconds(lua_tointeger(ls, -1));
+      lua_getfield(ls, 1, "ms");
+      auto ms = std::chrono::milliseconds(lua_tointeger(ls, -1));
+      lua_pop(ls, 3);
+      auto now = std::chrono::steady_clock::now();
+      ctx->sleep_time = now + min + sec + ms;
+    } else if (type == LUA_TNUMBER) {
+      int sleep_ms = luaL_checkinteger(ls, 1);
+      if (!lua_isinteger(ls, 1)) {
+        return 0;
+      }
+      auto now = std::chrono::steady_clock::now();
+      ctx->sleep_time = now + std::chrono::milliseconds(sleep_ms);
+    } else {
+      return luaL_error(ls, "unknown argument passed to luna_yield.");
+    }
   }
   return lua_yield(ls, 0);
 }
@@ -100,6 +115,13 @@ int luna_add_raw_event(lua_State* ls) {
   return 0;
 }
 
+int luna_cur_time(lua_State* ls) {
+  auto now = std::chrono::steady_clock::now();
+  auto seconds_since_epoch = std::chrono::duration_cast<std::chrono::duration<double>>(now.time_since_epoch()).count();
+  lua_pushnumber(ls, seconds_since_epoch);
+  return 1;
+}
+
 const luaL_Reg luna_lib[] = {
     {"yield", luna_yield},
     {"do_command", luna_do},
@@ -108,6 +130,7 @@ const luaL_Reg luna_lib[] = {
     {"bind", luna_bind},
     {"add_event", luna_add_event},
     {"add_raw_event", luna_add_raw_event},
+    {"cur_time", luna_cur_time},
     {nullptr, nullptr},
 };
 
@@ -199,9 +222,8 @@ void Luna::run_module(std::string_view sv) {
   DLOG("adding path %s", module_dir.generic_string().c_str());
   luaL_newlib(ls->main_thread, luna_lib);
   lua_setglobal(ls->main_thread, "luna");
-  lua_register(ls->main_thread, "luna_yield", luna_yield);
   DLOG("running module path %s", module_path.generic_string().c_str());
-  if (luaL_dofile(ls->main_thread, module_path.generic_string().c_str()) != 0) {
+  if (luaL_dofile(ls->main_thread, module_path.generic_string().c_str()) != LUA_OK) {
     LOG("error running lua module: %s", lua_tostring(ls->main_thread, -1));
     return;
   }
@@ -280,7 +302,7 @@ void Luna::load_config() {
 void Luna::save_config() {}
 
 int Luna::add_bind(lua_State* ls) {
-  auto cmd = luaL_checkstring(ls, 1);
+  auto cmd = luaL_checkstring(ls, 2);
   if (cmd == nullptr) {
     return 0;
   }

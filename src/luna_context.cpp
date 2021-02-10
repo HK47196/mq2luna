@@ -90,12 +90,12 @@ const char* LunaContext::get_context_name(lua_State* ls) {
 }
 
 void LunaContext::add_command_binding(lua_State* ls) {
-  auto cmd = luaL_checkstring(ls, 1);
-  if (cmd == nullptr) {
+  if (!lua_isfunction(ls, 1)) {
+    luaL_checktype(ls, 2, LUA_TFUNCTION);
     return;
   }
-  if (!lua_isfunction(ls, 2)) {
-    luaL_checktype(ls, 2, LUA_TFUNCTION);
+  auto cmd = luaL_checkstring(ls, 2);
+  if (cmd == nullptr) {
     return;
   }
   DLOG("attempting to add bind command %s", cmd);
@@ -116,10 +116,10 @@ void LunaContext::add_command_binding(lua_State* ls) {
   }
 
   // makes sure the function is at the top of the stack
-  lua_pushvalue(ls, 2);
+  lua_pushvalue(ls, 1);
   // place the function in the registry
   if (!lua_isfunction(ls, -1)) {
-    LOG("stack error in add_bind!");
+    LOG("stack error in add_command_binding!");
     return;
   }
   auto key = luaL_ref(ls, LUA_REGISTRYINDEX);
@@ -148,7 +148,7 @@ void LunaContext::add_event_binding(lua_State* ls) {
   lua_pushvalue(ls, 1);
   // place the function in the registry
   if (!lua_isfunction(ls, -1)) {
-    LOG("stack error in add_bind!");
+    LOG("stack error in add_event_bindind!");
     return;
   }
 
@@ -314,7 +314,7 @@ void LunaContext::pulse() {
 void LunaContext::zoned() { call_registry_fn(zoned_key, "zoned", event_thread); }
 void LunaContext::reload_ui() { call_registry_fn(reload_key, "reload_ui", event_thread); }
 void LunaContext::draw_hud() { call_registry_fn(draw_key, "draw_hud", event_thread); }
-void LunaContext::set_game_state(GameState game_state) {
+void LunaContext::set_game_state(GameState) {
   call_registry_fn(gamestate_changed_key, "gamestate_changed", event_thread);
 }
 

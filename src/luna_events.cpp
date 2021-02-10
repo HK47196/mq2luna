@@ -11,15 +11,31 @@
 #include "mq2_api.hpp"
 #include "utils.hpp"
 
-void Luna::OnZoned() {}
+void Luna::OnZoned() {
+  for (auto&& ctx : luna_ctxs_) {
+    ctx->zoned();
+  }
+}
 
 void Luna::OnCleanUI() {}
 
-void Luna::OnReloadUI() {}
+void Luna::OnReloadUI() {
+  for (auto&& ctx : luna_ctxs_) {
+    ctx->reload_ui();
+  }
+}
 
-void Luna::OnDrawHUD() {}
+void Luna::OnDrawHUD() {
+  for (auto&& ctx : luna_ctxs_) {
+    ctx->draw_hud();
+  }
+}
 
-void Luna::SetGameState(GameState game_state) {}
+void Luna::SetGameState(GameState game_state) {
+  for (auto&& ctx : luna_ctxs_) {
+    ctx->set_game_state(game_state);
+  }
+}
 
 void Luna::do_binds() {
   // index-based loop because it may be possible that more binds are added
@@ -71,7 +87,6 @@ void Luna::do_events() {
 void Luna::do_luna_commands() {
   for (auto i = 0u; i < todo_luna_cmds_.size(); ++i) {
     std::string_view sv = todo_luna_cmds_[i];
-    LOG("handling command: %s", sv.data());
     sv.remove_prefix(std::min(sv.find_first_not_of(" "), sv.size()));
     if (sv.starts_with("run ")) {
       sv.remove_prefix(4);
@@ -115,8 +130,6 @@ void Luna::OnPulse() {
 void Luna::OnWriteChatColor(const char* line, std::uint32_t color, std::uint32_t filter) {}
 
 void Luna::OnIncomingChat(const char* line, std::uint32_t color) {
-  // index-based loop because it may be possible that more events are added
-  // during.
   for (auto&& ctx : luna_ctxs_) {
     if (ctx->matches_event(line)) {
       todo_events_.emplace_back(std::string{line});
@@ -126,5 +139,4 @@ void Luna::OnIncomingChat(const char* line, std::uint32_t color) {
 }
 
 void Luna::OnBeginZone() {}
-
 void Luna::OnEndZone() {}
