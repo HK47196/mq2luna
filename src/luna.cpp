@@ -32,10 +32,8 @@ int luna_yield(lua_State* ls) {
     if (ctx == nullptr) {
       return 0;
     }
-    if (ctx->sleep_ms != 0) {
-      LOG("bug found in luna_yield! please report.");
-    }
-    ctx->sleep_ms = sleep_ms;
+    auto now = std::chrono::steady_clock::now();
+    ctx->sleep_time = now + std::chrono::milliseconds(sleep_ms);
   }
   return lua_yield(ls, 0);
 }
@@ -90,7 +88,10 @@ int luna_echo(lua_State* ls) {
 int luna_bind(lua_State* ls) { return luna->add_bind(ls); }
 
 int luna_add_event(lua_State* ls) {
-  luna->add_event(ls);
+  auto ctx = zx::get_context(ls);
+  if (ctx != nullptr) {
+    ctx->add_event_binding(ls);
+  }
   return 0;
 }
 
@@ -120,8 +121,6 @@ Luna::Luna() {
     LOG("failed to locate the mq2 dir, serious error.");
   }
   load_config();
-
-  last_tick_ = std::chrono::high_resolution_clock::now();
 }
 
 Luna::~Luna() { luna_ctxs_.clear(); }
@@ -285,96 +284,29 @@ int Luna::add_bind(lua_State* ls) {
   if (cmd == nullptr) {
     return 0;
   }
-  if (!lua_isfunction(ls, 2)) {
-    luaL_checktype(ls, 2, LUA_TFUNCTION);
-    return 0;
-  }
-  DLOG("attempting to add bind command %s", cmd);
-  std::string_view sv{cmd};
-  if (sv.size() <= 3) {
-    return luaL_error(ls, "bind command provided was too short.");
-  }
-  if (!isalpha(sv[0])) {
-    return luaL_error(ls, "first character of bind command must be a-Z");
-  }
-  for (char c : sv) {
-    if (!isalnum(c) && c != '_') {
-      return luaL_error(ls, "bind command name may only contain a-Z,0-9,_");
+  // hackery, check if the command is already bound by something else.
+  for (const auto& ctx : luna_ctxs_) {
+    if (ctx->has_command_binding(cmd)) {
+      return luaL_error(ls, "conflicting bind %s already exists", cmd);
     }
   }
   auto ctx = zx::get_context(ls);
   if (ctx == nullptr) {
     return 0;
   }
-  if (bound_command_map_.contains(cmd)) {
-    return luaL_error(ls, "conflicting bind %s already exists", cmd);
-  }
-  // makes sure the function is at the top of the stack
-  lua_pushvalue(ls, 2);
-  // place the function in the registry
-  if (!lua_isfunction(ls, -1)) {
-    LOG("stack error in add_bind!");
-    return 0;
-  }
-  auto key = luaL_ref(ls, LUA_REGISTRYINDEX);
-  auto [_, ret] = bound_command_map_.insert({cmd, {ctx, key}});
-  if (!ret) {
-    luaL_unref(ls, LUA_REGISTRYINDEX, key);
-    return luaL_error(ls, "this error should never happen?");
-  }
-  ctx->bound_commands_.push_back(cmd);
-  DLOG("added bind command %s", cmd);
+  ctx->add_command_binding(ls);
   return 0;
 }
 
-void Luna::add_event(lua_State* ls) {
-  if (!lua_isfunction(ls, 1)) {
-    luaL_checktype(ls, 1, LUA_TFUNCTION);
-    return;
+void Luna::cleanup_exiting_contexts() {
+  for (auto i = 0u; i < luna_ctxs_.size(); ++i) {
+    const std::unique_ptr<LunaContext>& ctx = luna_ctxs_[i];
+    if (!ctx->exiting) {
+      continue;
+    }
+    luna_ctxs_.erase(luna_ctxs_.begin() + i);
+    --i;
   }
-  auto event_str = luaL_checkstring(ls, 2);
-  if (event_str == nullptr) {
-    return;
-  }
-  std::string_view event_sv{event_str};
-  bool needs_interp = false;
-  if (event_sv.find("$[") != std::string_view::npos) {
-    // TODO
-    luaL_error(ls, "MQ data interpreter for event strings is NYI.");
-    return;
-  }
-  auto ctx = zx::get_context(ls);
-  if (ctx == nullptr) {
-    return;
-  }
-
-  // makes sure the function is at the top of the stack
-  lua_pushvalue(ls, 1);
-  // place the function in the registry
-  if (!lua_isfunction(ls, -1)) {
-    LOG("stack error in add_bind!");
-    return;
-  }
-
-  DLOG("adding event |%s|", event_str);
-  if (needs_interp) {
-    // TODO
-    luaL_error(ls, "MQ data interpreter for event strings is NYI.");
-    return;
-  } else {
-    ctx->event_regexes_.emplace_back(std::regex{std::string{event_sv}});
-  }
-  auto key = luaL_ref(ls, LUA_REGISTRYINDEX);
-  ctx->event_fn_keys_.push_back(key);
-}
-
-void Luna::remove_bind(const std::string& cmd) {
-  auto it = bound_command_map_.find(cmd);
-  if (it == bound_command_map_.end()) {
-    LOG("Attempted to remove the binding %s, but it does not exist.", cmd.c_str());
-    return;
-  }
-  bound_command_map_.erase(it);
 }
 
 Luna* luna;
