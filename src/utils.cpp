@@ -25,6 +25,7 @@ std::vector<std::string_view> strsplit(std::string_view str, std::string_view de
 LunaContext* get_context(lua_State* ls) {
   lua_getfield(ls, LUA_REGISTRYINDEX, LUNA_CTX_PTR_KEY);
   auto p = lua_touserdata(ls, -1);
+  lua_pop(ls, 1);
   if (p == nullptr) {
     luaL_error(ls, "No ptr registered for this context??");
     return nullptr;

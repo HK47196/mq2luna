@@ -291,8 +291,9 @@ int LunaContext::yield_event(lua_State* ls) {
       }
       auto now = std::chrono::steady_clock::now();
       sleep_time = now + std::chrono::milliseconds(sleep_ms);
+      lua_pop(ls, 1);
     } else {
-      return luaL_error(ls, "unknown argument passed to luna.yield.");
+      return luaL_error(ls, "unknown argument passed to luna.yield with type %s. Nargs: %d", luaL_typename(ls, 1), nargs);
     }
   }
   return lua_yield(ls, 0);

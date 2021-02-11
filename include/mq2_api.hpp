@@ -15,6 +15,9 @@
 
 class MQ2Type;
 
+// I'm unsure what the alignments/packing of these structs should be. mingw32 *seems* to get it right by default but I
+// really should be setting it manually. FIXME.
+
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wpedantic"
 struct ARGBCOLOR {

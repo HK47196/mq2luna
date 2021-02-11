@@ -98,6 +98,34 @@ int luna_cur_time(lua_State* ls) {
   return 1;
 }
 
+void dumpstack(lua_State* L) {
+  int top = lua_gettop(L);
+  for (int i = 1; i <= top; i++) {
+    switch (lua_type(L, i)) {
+    case LUA_TNUMBER:
+      LOG("\t%d\t%s\t%g", i, luaL_typename(L, i), lua_tonumber(L, i));
+      break;
+    case LUA_TSTRING:
+      LOG("\t%d\t%s\t%s", i, luaL_typename(L, i), lua_tostring(L, i));
+      break;
+    case LUA_TBOOLEAN:
+      LOG("\t%d\t%s\t%s", i, luaL_typename(L, i), lua_toboolean(L, i) ? "true" : "false");
+      break;
+    case LUA_TNIL:
+      LOG("\t%d\t%s\t%s", i, luaL_typename(L, i), "nil");
+      break;
+    default:
+      LOG("\t%d\t%s\t%p", i, luaL_typename(L, i), lua_topointer(L, i));
+      break;
+    }
+  }
+}
+
+int luna_dump_stack(lua_State* ls) {
+  dumpstack(ls);
+  return 0;
+}
+
 const luaL_Reg luna_lib[] = {
     {"yield", luna_yield},
     {"do_command", luna_do},
@@ -107,6 +135,7 @@ const luaL_Reg luna_lib[] = {
     {"add_event", luna_add_event},
     {"add_raw_event", luna_add_raw_event},
     {"cur_time", luna_cur_time},
+    {"dump_stack", luna_dump_stack},
     {nullptr, nullptr},
 };
 
@@ -141,9 +170,13 @@ void Luna::print_info() {
     LOG("Paused: %s", ls->paused ? "true" : "false");
     // TODO
     LOG(" Main thread stack size: %d", lua_gettop(ls->threads_.main));
+    dumpstack(ls->threads_.main);
     LOG(" Pulse thread stack size: %d", lua_gettop(ls->threads_.pulse));
+    dumpstack(ls->threads_.pulse);
     LOG(" Event thread stack size: %d", lua_gettop(ls->threads_.event));
+    dumpstack(ls->threads_.event);
     LOG(" Bind thread stack size: %d", lua_gettop(ls->threads_.bind));
+    dumpstack(ls->threads_.bind);
     LOG("Memory usage: NYI");
     LOG("Current line: NYI");
   }
