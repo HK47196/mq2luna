@@ -9,6 +9,39 @@
 #include "luna.hpp"
 #include "mq2_api.hpp"
 
+namespace {
+int get_key(lua_State* l, int idx, const char* field_name) {
+  if (lua_getfield(l, idx, field_name) == LUA_TFUNCTION) {
+    return luaL_ref(l, LUA_REGISTRYINDEX);
+  }
+  lua_pop(l, 1);
+  return LUA_NOREF;
+}
+
+EventKeys get_event_keys(lua_State* main_state) {
+  auto ret = lua_getglobal(main_state, module_global);
+  if (ret != LUA_TTABLE) {
+    lua_pop(main_state, 1);
+    return {};
+  }
+  const EventKeys ek = {
+      .pulse = get_key(main_state, -1, "pulse"),
+      .zoned = get_key(main_state, -1, "zoned"),
+      .clean = get_key(main_state, -1, "clean"),
+      .reload = get_key(main_state, -1, "reload"),
+      .draw = get_key(main_state, -1, "draw"),
+      .gamestate_changed = get_key(main_state, -1, "gamestate_changed"),
+      .write_chat = get_key(main_state, -1, "write_chat"),
+      .incoming_chat = get_key(main_state, -1, "incoming_chat"),
+      .begin_zone = get_key(main_state, -1, "begin_zone"),
+      .end_zone = get_key(main_state, -1, "end_zone"),
+      .exit_fn = get_key(main_state, -1, "at_exit"),
+  };
+  lua_pop(main_state, 1);
+  return ek;
+}
+} // namespace
+
 LunaContext::LunaContext(const std::string& name) : name{name} {
   main_thread = luaL_newstate();
   luaL_openlibs(main_thread);
@@ -51,33 +84,13 @@ void LunaContext::set_search_path(const char* path) {
   lua_pop(main_thread, 1);
 }
 
-namespace {
-int get_key(lua_State* l, int idx, const char* field_name) {
-  if (lua_getfield(l, idx, field_name) == LUA_TFUNCTION) {
-    return luaL_ref(l, LUA_REGISTRYINDEX);
-  }
-  lua_pop(l, 1);
-  return LUA_NOREF;
-}
-} // namespace
-
 bool LunaContext::create_indices() {
   auto ret = lua_getglobal(main_thread, module_global);
   if (ret != LUA_TTABLE) {
     lua_pop(main_thread, 1);
     return false;
   }
-  pulse_key = get_key(main_thread, -1, "pulse");
-  zoned_key = get_key(main_thread, -1, "zoned");
-  clean_key = get_key(main_thread, -1, "clean");
-  reload_key = get_key(main_thread, -1, "reload");
-  draw_key = get_key(main_thread, -1, "draw");
-  gamestate_changed_key = get_key(main_thread, -1, "gamestate_changed");
-  write_chat_key = get_key(main_thread, -1, "write_chat");
-  incoming_chat_key = get_key(main_thread, -1, "incoming_chat");
-  begin_zone_key = get_key(main_thread, -1, "begin_zone");
-  end_zone_key = get_key(main_thread, -1, "end_zone");
-  exit_fn_key = get_key(main_thread, -1, "at_exit");
+  keys_ = get_event_keys(main_thread);
   lua_pop(main_thread, 1);
   return true;
 }
@@ -261,12 +274,40 @@ bool LunaContext::matches_event(const char* event_line) {
   return false;
 }
 
+int LunaContext::yield_event(lua_State* ls) {
+  int nargs = lua_gettop(ls);
+  if (nargs > 0) {
+    int type = lua_type(ls, 1);
+    if (type == LUA_TTABLE) {
+      lua_getfield(ls, 1, "min");
+      auto min = std::chrono::minutes(lua_tointeger(ls, -1));
+      lua_getfield(ls, 1, "sec");
+      auto sec = std::chrono::seconds(lua_tointeger(ls, -1));
+      lua_getfield(ls, 1, "ms");
+      auto ms = std::chrono::milliseconds(lua_tointeger(ls, -1));
+      lua_pop(ls, 3);
+      auto now = std::chrono::steady_clock::now();
+      sleep_time = now + min + sec + ms;
+    } else if (type == LUA_TNUMBER) {
+      int sleep_ms = luaL_checkinteger(ls, 1);
+      if (!lua_isinteger(ls, 1)) {
+        return 0;
+      }
+      auto now = std::chrono::steady_clock::now();
+      sleep_time = now + std::chrono::milliseconds(sleep_ms);
+    } else {
+      return luaL_error(ls, "unknown argument passed to luna.yield.");
+    }
+  }
+  return lua_yield(ls, 0);
+}
+
 void LunaContext::pulse() {
   if (exiting) {
     DLOG("Attempted to call pulse in exiting content.")
     return;
   }
-  if (paused || pulse_key == LUA_NOREF) {
+  if (paused || keys_.pulse == LUA_NOREF) {
     return;
   }
   auto now = std::chrono::steady_clock::now();
@@ -275,7 +316,7 @@ void LunaContext::pulse() {
   }
   if (!pulse_yielding) {
     // push the pulse function onto the stack if it's not a yielded thread
-    auto type = lua_rawgeti(pulse_thread, LUA_REGISTRYINDEX, pulse_key);
+    auto type = lua_rawgeti(pulse_thread, LUA_REGISTRYINDEX, keys_.pulse);
     if (type != LUA_TFUNCTION) {
       LOG("1:UNKNOWN ERROR IN PULSE.");
       exiting = true;
@@ -311,11 +352,11 @@ void LunaContext::pulse() {
   }
 }
 
-void LunaContext::zoned() { call_registry_fn(zoned_key, "zoned", event_thread); }
-void LunaContext::reload_ui() { call_registry_fn(reload_key, "reload_ui", event_thread); }
-void LunaContext::draw_hud() { call_registry_fn(draw_key, "draw_hud", event_thread); }
+void LunaContext::zoned() { call_registry_fn(keys_.zoned, "zoned", event_thread); }
+void LunaContext::reload_ui() { call_registry_fn(keys_.reload, "reload_ui", event_thread); }
+void LunaContext::draw_hud() { call_registry_fn(keys_.draw, "draw_hud", event_thread); }
 void LunaContext::set_game_state(GameState) {
-  call_registry_fn(gamestate_changed_key, "gamestate_changed", event_thread);
+  call_registry_fn(keys_.gamestate_changed, "gamestate_changed", event_thread);
 }
 
 void LunaContext::call_registry_fn(int key, const char* fn_name, lua_State* thread) {
@@ -343,10 +384,10 @@ void LunaContext::exit_fn() {
   }
   did_exit_ = true;
 
-  if (exit_fn_key == LUA_NOREF) {
+  if (keys_.exit_fn == LUA_NOREF) {
     return;
   }
-  auto type = lua_rawgeti(main_thread, LUA_REGISTRYINDEX, exit_fn_key);
+  auto type = lua_rawgeti(main_thread, LUA_REGISTRYINDEX, keys_.exit_fn);
   if (type != LUA_TFUNCTION) {
     LOG("\arexit_fn key is set, but not a function? Please report!");
     return;

@@ -16,6 +16,27 @@
 #include <string>
 #include <vector>
 
+struct EventKeys {
+  int pulse = LUA_NOREF;
+  int zoned = LUA_NOREF;
+  int clean = LUA_NOREF;
+  int reload = LUA_NOREF;
+  int draw = LUA_NOREF;
+  int gamestate_changed = LUA_NOREF;
+  int write_chat = LUA_NOREF;
+  int incoming_chat = LUA_NOREF;
+  int begin_zone = LUA_NOREF;
+  int end_zone = LUA_NOREF;
+  int exit_fn = LUA_NOREF;
+};
+
+struct LuaThreads {
+  const lua_State* main;
+  const lua_State* pulse;
+  const lua_State* event;
+  const lua_State* bind;
+};
+
 constexpr const char* module_global = "luna_module";
 struct LunaContext {
   LunaContext(const std::string& name);
@@ -32,6 +53,8 @@ struct LunaContext {
   void do_command_bind(std::vector<std::string_view> args);
   void do_event(const std::string& event_line);
   bool matches_event(const char* event_line);
+
+  int yield_event(lua_State* ls);
 
   std::string name;
   lua_State* main_thread;
@@ -62,21 +85,23 @@ private:
   std::vector<std::regex> event_regexes_;
   std::vector<int> event_fn_keys_;
   std::map<std::string, int, std::less<>> bound_command_map_;
-  int pulse_key = LUA_NOREF;
-  int zoned_key = LUA_NOREF;
-  int clean_key = LUA_NOREF;
-  int reload_key = LUA_NOREF;
-  int draw_key = LUA_NOREF;
-  int gamestate_changed_key = LUA_NOREF;
-  int write_chat_key = LUA_NOREF;
-  int incoming_chat_key = LUA_NOREF;
-  int begin_zone_key = LUA_NOREF;
-  int end_zone_key = LUA_NOREF;
-  int exit_fn_key = LUA_NOREF;
+  // int pulse_key = LUA_NOREF;
+  // int zoned_key = LUA_NOREF;
+  // int clean_key = LUA_NOREF;
+  // int reload_key = LUA_NOREF;
+  // int draw_key = LUA_NOREF;
+  // int gamestate_changed_key = LUA_NOREF;
+  // int write_chat_key = LUA_NOREF;
+  // int incoming_chat_key = LUA_NOREF;
+  // int begin_zone_key = LUA_NOREF;
+  // int end_zone_key = LUA_NOREF;
+  // int exit_fn_key = LUA_NOREF;
 
   void call_registry_fn(int key, const char* fn_name, lua_State* thread);
 
   void exit_fn();
+
+  EventKeys keys_;
   bool did_exit_ = false;
 };
 

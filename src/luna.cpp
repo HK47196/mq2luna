@@ -22,35 +22,11 @@ int luna_yield(lua_State* ls) {
   if (!luna->in_pulse()) {
     return luaL_error(ls, "yielding is NOT support on non-pulse threads.");
   }
-  int nargs = lua_gettop(ls);
-  if (nargs > 0) {
-    auto ctx = zx::get_context(ls);
-    if (ctx == nullptr) {
-      return 0;
-    }
-    int type = lua_type(ls, 1);
-    if (type == LUA_TTABLE) {
-      lua_getfield(ls, 1, "min");
-      auto min = std::chrono::minutes(lua_tointeger(ls, -1));
-      lua_getfield(ls, 1, "sec");
-      auto sec = std::chrono::seconds(lua_tointeger(ls, -1));
-      lua_getfield(ls, 1, "ms");
-      auto ms = std::chrono::milliseconds(lua_tointeger(ls, -1));
-      lua_pop(ls, 3);
-      auto now = std::chrono::steady_clock::now();
-      ctx->sleep_time = now + min + sec + ms;
-    } else if (type == LUA_TNUMBER) {
-      int sleep_ms = luaL_checkinteger(ls, 1);
-      if (!lua_isinteger(ls, 1)) {
-        return 0;
-      }
-      auto now = std::chrono::steady_clock::now();
-      ctx->sleep_time = now + std::chrono::milliseconds(sleep_ms);
-    } else {
-      return luaL_error(ls, "unknown argument passed to luna_yield.");
-    }
+  auto ctx = zx::get_context(ls);
+  if (ctx == nullptr) {
+    return 0;
   }
-  return lua_yield(ls, 0);
+  return ctx->yield_event(ls);
 }
 
 int luna_do(lua_State* ls) {
