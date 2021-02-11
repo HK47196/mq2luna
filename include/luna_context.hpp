@@ -49,10 +49,10 @@ struct LunaContext {
 
   void add_command_binding(lua_State* ls);
   void add_event_binding(lua_State* ls);
-  bool has_command_binding(std::string_view command);
+  bool has_command_binding(std::string_view command) const;
   void do_command_bind(std::vector<std::string_view> args);
   void do_event(const std::string& event_line);
-  bool matches_event(const char* event_line);
+  bool matches_event(const char* event_line) const;
 
   int yield_event(lua_State* ls);
 
@@ -76,9 +76,6 @@ struct LunaContext {
   void set_game_state(GameState game_state);
 
 private:
-  bool in_bind_call_ = false;
-  bool in_event_call_ = false;
-
   std::vector<std::regex> event_regexes_;
   std::vector<int> event_fn_keys_;
   std::map<std::string, int, std::less<>> bound_command_map_;

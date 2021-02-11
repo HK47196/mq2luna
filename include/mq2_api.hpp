@@ -15,6 +15,8 @@
 
 class MQ2Type;
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wpedantic"
 struct ARGBCOLOR {
   union {
     struct {
@@ -121,6 +123,7 @@ struct MQ2TypeVar {
     unsigned __int64 UInt64;
   };
 };
+#pragma GCC diagnostic pop
 
 struct SPAWNINFO;
 using PSPAWNINFO = SPAWNINFO*;

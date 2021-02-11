@@ -177,7 +177,7 @@ void LunaContext::add_event_binding(lua_State* ls) {
   event_fn_keys_.push_back(key);
 }
 
-bool LunaContext::has_command_binding(std::string_view command) { return bound_command_map_.contains(command); }
+bool LunaContext::has_command_binding(std::string_view command) const { return bound_command_map_.contains(command); }
 
 void LunaContext::do_command_bind(std::vector<std::string_view> args) {
   if (exiting) {
@@ -215,7 +215,6 @@ void LunaContext::do_command_bind(std::vector<std::string_view> args) {
     lua_pushstring(threads_.bind, buf);
     ++nargs;
   }
-  in_bind_call_ = true;
   if (lua_pcall(threads_.bind, nargs, 0, 0) != LUA_OK) {
     const char* event_msg = lua_tostring(threads_.bind, -1);
     LOG("\ardo_command_bind had an error!");
@@ -224,7 +223,6 @@ void LunaContext::do_command_bind(std::vector<std::string_view> args) {
       lua_pop(threads_.bind, 1);
     }
   }
-  in_bind_call_ = false;
 }
 
 void LunaContext::do_event(const std::string& event_line) {
@@ -252,7 +250,6 @@ void LunaContext::do_event(const std::string& event_line) {
       auto match_offset = sm.position(l);
       lua_pushlstring(threads_.event, event_line.data() + match_offset, match_len);
     }
-    in_event_call_ = true;
     if (lua_pcall(threads_.event, nargs, 0, 0) != LUA_OK) {
       const char* event_msg = lua_tostring(threads_.event, -1);
       LOG("event matching |%s| had an error.", event_line.c_str());
@@ -261,11 +258,10 @@ void LunaContext::do_event(const std::string& event_line) {
         lua_pop(threads_.event, 1);
       }
     }
-    in_event_call_ = false;
   }
 }
 
-bool LunaContext::matches_event(const char* event_line) {
+bool LunaContext::matches_event(const char* event_line) const {
   for (const std::regex& re : event_regexes_) {
     if (std::regex_match(event_line, re)) {
       return true;
