@@ -140,10 +140,10 @@ void Luna::print_info() {
     LOG("Name: %s", ls->name.c_str());
     LOG("Paused: %s", ls->paused ? "true" : "false");
     // TODO
-    LOG(" Main thread stack size: %d", lua_gettop(ls->main_thread));
-    LOG(" Pulse thread stack size: %d", lua_gettop(ls->main_thread));
-    LOG(" Event thread stack size: %d", lua_gettop(ls->main_thread));
-    LOG(" Bind thread stack size: %d", lua_gettop(ls->main_thread));
+    LOG(" Main thread stack size: %d", lua_gettop(ls->threads_.main));
+    LOG(" Pulse thread stack size: %d", lua_gettop(ls->threads_.pulse));
+    LOG(" Event thread stack size: %d", lua_gettop(ls->threads_.event));
+    LOG(" Bind thread stack size: %d", lua_gettop(ls->threads_.bind));
     LOG("Memory usage: NYI");
     LOG("Current line: NYI");
   }
@@ -196,18 +196,19 @@ void Luna::run_module(std::string_view sv) {
       module_dir.generic_string() + "?.lua;" + search_path + "/lib/?.lua;" + search_path + "/lib/?/init.lua;";
   ls->set_search_path(lua_search_path.c_str());
   DLOG("adding path %s", module_dir.generic_string().c_str());
-  luaL_newlib(ls->main_thread, luna_lib);
-  lua_setglobal(ls->main_thread, "luna");
+  lua_State* main_thread = ls->threads_.main;
+  luaL_newlib(main_thread, luna_lib);
+  lua_setglobal(main_thread, "luna");
   DLOG("running module path %s", module_path.generic_string().c_str());
-  if (luaL_dofile(ls->main_thread, module_path.generic_string().c_str()) != LUA_OK) {
-    LOG("error running lua module: %s", lua_tostring(ls->main_thread, -1));
+  if (luaL_dofile(main_thread, module_path.generic_string().c_str()) != LUA_OK) {
+    LOG("error running lua module: %s", lua_tostring(main_thread, -1));
     return;
   }
-  if (!lua_istable(ls->main_thread, -1)) {
+  if (!lua_istable(main_thread, -1)) {
     LOG("1:error running %s, refer to the examples.", sv.data());
     return;
   }
-  lua_setglobal(ls->main_thread, module_global);
+  lua_setglobal(main_thread, module_global);
   if (!ls->create_indices()) {
     LOG("2:error running %s, refer to the examples.", sv.data());
     return;

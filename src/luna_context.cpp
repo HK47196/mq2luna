@@ -43,32 +43,32 @@ EventKeys get_event_keys(lua_State* main_state) {
 } // namespace
 
 LunaContext::LunaContext(const std::string& name) : name{name} {
-  main_thread = luaL_newstate();
-  luaL_openlibs(main_thread);
+  threads_.main = luaL_newstate();
+  luaL_openlibs(threads_.main);
 
-  lua_pushstring(main_thread, LUNA_MODULE_KEY);
-  lua_pushstring(main_thread, name.c_str());
-  lua_rawset(main_thread, LUA_REGISTRYINDEX);
+  lua_pushstring(threads_.main, LUNA_MODULE_KEY);
+  lua_pushstring(threads_.main, name.c_str());
+  lua_rawset(threads_.main, LUA_REGISTRYINDEX);
 
-  lua_pushstring(main_thread, LUNA_CTX_PTR_KEY);
-  lua_pushlightuserdata(main_thread, this);
-  lua_rawset(main_thread, LUA_REGISTRYINDEX);
+  lua_pushstring(threads_.main, LUNA_CTX_PTR_KEY);
+  lua_pushlightuserdata(threads_.main, this);
+  lua_rawset(threads_.main, LUA_REGISTRYINDEX);
 
-  pulse_thread = lua_newthread(main_thread);
-  event_thread = lua_newthread(main_thread);
-  bind_thread = lua_newthread(main_thread);
+  threads_.pulse = lua_newthread(threads_.main);
+  threads_.event = lua_newthread(threads_.main);
+  threads_.bind = lua_newthread(threads_.main);
 }
 
 LunaContext::~LunaContext() {
   exit_fn();
-  pulse_thread = nullptr;
-  event_thread = nullptr;
-  bind_thread = nullptr;
-  if (!main_thread) {
+  threads_.pulse = nullptr;
+  threads_.event = nullptr;
+  threads_.bind = nullptr;
+  if (!threads_.main) {
     return;
   }
-  lua_close(main_thread);
-  main_thread = nullptr;
+  lua_close(threads_.main);
+  threads_.main = nullptr;
   if (luna == nullptr) {
     return;
   }
@@ -78,20 +78,20 @@ void LunaContext::set_search_path(const char* path) {
   if (path == nullptr) {
     return;
   }
-  lua_getglobal(main_thread, "package");
-  lua_pushstring(main_thread, path);
-  lua_setfield(main_thread, -2, "path");
-  lua_pop(main_thread, 1);
+  lua_getglobal(threads_.main, "package");
+  lua_pushstring(threads_.main, path);
+  lua_setfield(threads_.main, -2, "path");
+  lua_pop(threads_.main, 1);
 }
 
 bool LunaContext::create_indices() {
-  auto ret = lua_getglobal(main_thread, module_global);
+  auto ret = lua_getglobal(threads_.main, module_global);
   if (ret != LUA_TTABLE) {
-    lua_pop(main_thread, 1);
+    lua_pop(threads_.main, 1);
     return false;
   }
-  keys_ = get_event_keys(main_thread);
-  lua_pop(main_thread, 1);
+  keys_ = get_event_keys(threads_.main);
+  lua_pop(threads_.main, 1);
   return true;
 }
 
@@ -194,12 +194,12 @@ void LunaContext::do_command_bind(std::vector<std::string_view> args) {
     LOG("2:ERROR in do_command_bind, please report.");
     return;
   }
-  auto type = lua_rawgeti(bind_thread, LUA_REGISTRYINDEX, registry_key);
+  auto type = lua_rawgeti(threads_.bind, LUA_REGISTRYINDEX, registry_key);
   if (type != LUA_TFUNCTION) {
     // create temp allocation for error string
     std::string cmd_name{cmd};
     LOG("ERROR: can't find bind function for command %s.", cmd_name.c_str());
-    lua_pop(bind_thread, 1);
+    lua_pop(threads_.bind, 1);
     return;
   }
   char buf[2048] = {'\0'};
@@ -212,16 +212,16 @@ void LunaContext::do_command_bind(std::vector<std::string_view> args) {
     }
     std::strncpy(buf, arg.data(), arg.size());
     buf[arg.size()] = '\0';
-    lua_pushstring(bind_thread, buf);
+    lua_pushstring(threads_.bind, buf);
     ++nargs;
   }
   in_bind_call_ = true;
-  if (lua_pcall(bind_thread, nargs, 0, 0) != LUA_OK) {
-    const char* event_msg = lua_tostring(bind_thread, -1);
+  if (lua_pcall(threads_.bind, nargs, 0, 0) != LUA_OK) {
+    const char* event_msg = lua_tostring(threads_.bind, -1);
     LOG("\ardo_command_bind had an error!");
     if (event_msg != nullptr) {
       LOG("  \arerror message: %s", event_msg);
-      lua_pop(bind_thread, 1);
+      lua_pop(threads_.bind, 1);
     }
   }
   in_bind_call_ = false;
@@ -240,25 +240,25 @@ void LunaContext::do_event(const std::string& event_line) {
     int nargs = sm.size() - 1;
     // push the event handler function onto the stack.
     auto registry_key = event_fn_keys_[i];
-    auto type = lua_rawgeti(event_thread, LUA_REGISTRYINDEX, registry_key);
+    auto type = lua_rawgeti(threads_.event, LUA_REGISTRYINDEX, registry_key);
     if (type != LUA_TFUNCTION) {
       // TODO: error handling if fn not found
-      lua_pop(event_thread, 1);
+      lua_pop(threads_.event, 1);
       continue;
     }
     // 0 = full match string
     for (auto l = 1u; l < sm.size(); ++l) {
       auto match_len = sm.length(l);
       auto match_offset = sm.position(l);
-      lua_pushlstring(event_thread, event_line.data() + match_offset, match_len);
+      lua_pushlstring(threads_.event, event_line.data() + match_offset, match_len);
     }
     in_event_call_ = true;
-    if (lua_pcall(event_thread, nargs, 0, 0) != LUA_OK) {
-      const char* event_msg = lua_tostring(event_thread, -1);
+    if (lua_pcall(threads_.event, nargs, 0, 0) != LUA_OK) {
+      const char* event_msg = lua_tostring(threads_.event, -1);
       LOG("event matching |%s| had an error.", event_line.c_str());
       if (event_msg != nullptr) {
         LOG("  \arerror message: %s", event_msg);
-        lua_pop(event_thread, 1);
+        lua_pop(threads_.event, 1);
       }
     }
     in_event_call_ = false;
@@ -316,7 +316,7 @@ void LunaContext::pulse() {
   }
   if (!pulse_yielding) {
     // push the pulse function onto the stack if it's not a yielded thread
-    auto type = lua_rawgeti(pulse_thread, LUA_REGISTRYINDEX, keys_.pulse);
+    auto type = lua_rawgeti(threads_.pulse, LUA_REGISTRYINDEX, keys_.pulse);
     if (type != LUA_TFUNCTION) {
       LOG("1:UNKNOWN ERROR IN PULSE.");
       exiting = true;
@@ -324,7 +324,7 @@ void LunaContext::pulse() {
     }
   }
   int nargs;
-  auto ret = lua_resume(pulse_thread, nullptr, 0, &nargs);
+  auto ret = lua_resume(threads_.pulse, nullptr, 0, &nargs);
   switch (ret) {
   case LUA_OK:
     pulse_yielding = false;
@@ -338,7 +338,7 @@ void LunaContext::pulse() {
   case LUA_ERRFILE:
     LOG("Received a lua error, stopping module %s.", name.c_str());
     // TODO: full backtrace/stack dump
-    LOG("lua err string: %s", lua_tostring(pulse_thread, -1));
+    LOG("lua err string: %s", lua_tostring(threads_.pulse, -1));
     exiting = true;
     return;
   default:
@@ -352,11 +352,11 @@ void LunaContext::pulse() {
   }
 }
 
-void LunaContext::zoned() { call_registry_fn(keys_.zoned, "zoned", event_thread); }
-void LunaContext::reload_ui() { call_registry_fn(keys_.reload, "reload_ui", event_thread); }
-void LunaContext::draw_hud() { call_registry_fn(keys_.draw, "draw_hud", event_thread); }
+void LunaContext::zoned() { call_registry_fn(keys_.zoned, "zoned", threads_.event); }
+void LunaContext::reload_ui() { call_registry_fn(keys_.reload, "reload_ui", threads_.event); }
+void LunaContext::draw_hud() { call_registry_fn(keys_.draw, "draw_hud", threads_.event); }
 void LunaContext::set_game_state(GameState) {
-  call_registry_fn(keys_.gamestate_changed, "gamestate_changed", event_thread);
+  call_registry_fn(keys_.gamestate_changed, "gamestate_changed", threads_.event);
 }
 
 void LunaContext::call_registry_fn(int key, const char* fn_name, lua_State* thread) {
@@ -387,17 +387,17 @@ void LunaContext::exit_fn() {
   if (keys_.exit_fn == LUA_NOREF) {
     return;
   }
-  auto type = lua_rawgeti(main_thread, LUA_REGISTRYINDEX, keys_.exit_fn);
+  auto type = lua_rawgeti(threads_.main, LUA_REGISTRYINDEX, keys_.exit_fn);
   if (type != LUA_TFUNCTION) {
     LOG("\arexit_fn key is set, but not a function? Please report!");
     return;
   }
-  if (lua_pcall(main_thread, 0, 0, 0) != LUA_OK) {
-    const char* event_msg = lua_tostring(main_thread, -1);
+  if (lua_pcall(threads_.main, 0, 0, 0) != LUA_OK) {
+    const char* event_msg = lua_tostring(threads_.main, -1);
     LOG("\arat_exit handler had an error!");
     if (event_msg != nullptr) {
       LOG("  \arerror message: %s", event_msg);
-      lua_pop(main_thread, 1);
+      lua_pop(threads_.main, 1);
     }
   }
 }

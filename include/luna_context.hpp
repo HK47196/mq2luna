@@ -31,10 +31,10 @@ struct EventKeys {
 };
 
 struct LuaThreads {
-  const lua_State* main;
-  const lua_State* pulse;
-  const lua_State* event;
-  const lua_State* bind;
+  lua_State* main;
+  lua_State* pulse;
+  lua_State* event;
+  lua_State* bind;
 };
 
 constexpr const char* module_global = "luna_module";
@@ -57,10 +57,7 @@ struct LunaContext {
   int yield_event(lua_State* ls);
 
   std::string name;
-  lua_State* main_thread;
-  lua_State* pulse_thread;
-  lua_State* event_thread;
-  lua_State* bind_thread;
+  LuaThreads threads_;
   bool pulse_yielding = false;
   bool paused = false;
 
@@ -85,17 +82,6 @@ private:
   std::vector<std::regex> event_regexes_;
   std::vector<int> event_fn_keys_;
   std::map<std::string, int, std::less<>> bound_command_map_;
-  // int pulse_key = LUA_NOREF;
-  // int zoned_key = LUA_NOREF;
-  // int clean_key = LUA_NOREF;
-  // int reload_key = LUA_NOREF;
-  // int draw_key = LUA_NOREF;
-  // int gamestate_changed_key = LUA_NOREF;
-  // int write_chat_key = LUA_NOREF;
-  // int incoming_chat_key = LUA_NOREF;
-  // int begin_zone_key = LUA_NOREF;
-  // int end_zone_key = LUA_NOREF;
-  // int exit_fn_key = LUA_NOREF;
 
   void call_registry_fn(int key, const char* fn_name, lua_State* thread);
 
